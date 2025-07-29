@@ -1,0 +1,36 @@
+{
+  "name": "ao3-reader",
+  "publisher": "Pizzarollwins",
+  "displayName": "ao3-reader",
+  "description": "Read AO3 fanfiction in VSCode",
+  "version": "0.0.3",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:ao3-reader.openAo3Fanfic"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ao3-reader.openAo3Fanfic",
+        "title": "Open AO3 Fanfiction"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vscode": "^1.1.37"
+  },
+  "dependencies": {
+    "playwright": "^1.53.1"
+  }
+}
