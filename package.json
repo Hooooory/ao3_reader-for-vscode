@@ -3,15 +3,16 @@
   "publisher": "Pizzarollwins",
   "displayName": "ao3-reader",
   "description": "Read AO3 fanfiction in VSCode",
-  "version": "0.0.3",
+  "version": "0.0.6",
   "engines": {
-    "vscode": "^1.70.0"
+    "vscode": "^1.70.0",
+    "node": ">=16.0.0"
   },
   "categories": [
     "Other"
   ],
   "activationEvents": [
-    "onCommand:ao3-reader.openAo3Fanfic"
+    "*"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -32,5 +33,9 @@
   },
   "dependencies": {
     "playwright": "^1.53.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hooooory/ao3_reader-for-vscode.git"
   }
 }

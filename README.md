@@ -22,14 +22,8 @@
 4. Choose between:
 - "Read inside VSCode"
 - "Terminal stealth mode"
-5. Enjoy reading!
-
----
-
-## 🛠 Dependencies / 依赖
-
-- This extension uses `playwright` to load the story content.
-- On first use, it will auto-install necessary browser binaries (~100MB).
+5. For terminal stealth mode, the story will appear in the **Output panel** (not the terminal)
+6. Enjoy reading!
 
 ---
 
