@@ -2,7 +2,7 @@
 
 🎉 A Visual Studio Code extension that lets you read AO3 (Archive of Our Own) fanfiction inside your editor, either in a web view or a “terminal-style stealth mode” for the office!
 
-💡 一个可以在 VSCode 中阅读 AO3 同人小说的插件！支持普通阅读和伪装成终端摸鱼阅读模式。
+💡 一个可以在 VSCode 中阅读 AO3 同人小说的插件！支持普通阅读和伪装成终端摸鱼阅读模式，注意终端模式的输出在output里面不在terminal本身。
 
 ---
 

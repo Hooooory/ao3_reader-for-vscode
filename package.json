@@ -3,7 +3,7 @@
   "publisher": "Pizzarollwins",
   "displayName": "ao3-reader",
   "description": "Read AO3 fanfiction in VSCode",
-  "version": "0.0.6",
+  "version": "0.0.8",
   "engines": {
     "vscode": "^1.70.0",
     "node": ">=16.0.0"

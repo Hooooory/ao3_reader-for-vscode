@@ -216,10 +216,25 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {}
 
 async function extractContent(page: any) {
-    const contentHtml = await page.$eval('#chapters .userstuff', (el: Element) => el.innerHTML);
-    const contentText = await page.$eval('#chapters .userstuff', (el: HTMLElement) => el.innerText);
+    let contentHtml, contentText;
+    
+    try {
+        // 优先选择包含 "Chapter Text" 的元素
+        contentHtml = await page.$eval('#chapters .userstuff:has(h3:contains("Chapter Text"))', (el: Element) => el.innerHTML);
+        contentText = await page.$eval('#chapters .userstuff:has(h3:contains("Chapter Text"))', (el: HTMLElement) => el.innerText);
+    } catch (error) {
+        try {
+            // 备选：选择有 module 类的元素
+            contentHtml = await page.$eval('#chapters .userstuff.module', (el: Element) => el.innerHTML);
+            contentText = await page.$eval('#chapters .userstuff.module', (el: HTMLElement) => el.innerText);
+        } catch (error2) {
+            // 最后回退到最后一个元素
+            contentHtml = await page.$eval('#chapters .userstuff:last-child', (el: Element) => el.innerHTML);
+            contentText = await page.$eval('#chapters .userstuff:last-child', (el: HTMLElement) => el.innerText);
+        }
+    }
+    
     const title = await page.title();
-
     const chapterOptions = await page.$$eval('#selected_id option', (options: Element[]) => {
         return options.map(option => ({
             text: option.textContent?.trim() || '',
