@@ -1,300 +1,354 @@
+import * as https from 'https';
 import * as vscode from 'vscode';
-import { chromium } from 'playwright';
+import { load } from 'cheerio';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+const AO3_HOSTS = new Set(['archiveofourown.org', 'www.archiveofourown.org']);
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_REDIRECTS = 5;
+
+interface ChapterOption {
+    text: string;
+    url: string;
+}
+
+interface WorkContent {
+    contentHtml: string;
+    contentText: string;
+    title: string;
+    chapterOptions: ChapterOption[];
+}
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('ao3-reader activated');
+    const output = vscode.window.createOutputChannel('AO3 Reader');
 
-    let disposable = vscode.commands.registerCommand('ao3-reader.openAo3Fanfic', async () => {
-        const url = await vscode.window.showInputBox({
+    const disposable = vscode.commands.registerCommand('ao3-reader.openAo3Fanfic', async () => {
+        const input = await vscode.window.showInputBox({
             prompt: '请输入 AO3 小说链接',
             placeHolder: 'https://archiveofourown.org/works/xxxxxx/chapters/yyyyyy'
         });
 
-        if (!url) {
-            vscode.window.showWarningMessage('请输入有效的链接！');
+        if (!input) {
             return;
         }
 
-        // 额外加一个选项：是否用终端模式
-        const mode = await vscode.window.showQuickPick(['在 VSCode 里阅读', '伪装成终端摸鱼模式'], {
-            placeHolder: '请选择阅读模式'
-        });
+        let url: URL;
+        try {
+            url = normalizeAo3Url(input);
+        } catch (error) {
+            vscode.window.showErrorMessage(getErrorMessage(error));
+            return;
+        }
+
+        const mode = await vscode.window.showQuickPick(
+            ['在 VSCode 里阅读', '伪装成终端摸鱼模式'],
+            { placeHolder: '请选择阅读模式' }
+        );
 
         if (!mode) {
             return;
         }
 
-        vscode.window.showInformationMessage(`开始加载：${url} （模式：${mode}）`);
-
-        const browser = await chromium.launch();
-        const page = await browser.newPage();
-
         try {
-            await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-            const { contentText, contentHtml, title, chapterOptions } = await extractContent(page);
-
-            // if (mode === '伪装成终端摸鱼模式') {
-            //     const terminal = vscode.window.createTerminal('AO3 Reader');
-            //     terminal.show();
-
-            //     const printChapter = async (chapterUrl: string) => {
-            //         await page.goto(chapterUrl, { waitUntil: 'domcontentloaded' });
-            //         const { contentText: newContentText, title: newTitle } = await extractContent(page);
-            //         terminal.sendText(`Write-Output "=== ${newTitle} ==="\n`);
-            //         terminal.sendText(`Write-Output @"\n${newContentText}\n"@\n`);
-            //         terminal.sendText(`Write-Output "--- 可输入章节编号切换章节，或输入 q 退出 ---"\n`);
-            //     };
-
-            //     const printChapterList = () => {
-            //         terminal.sendText('Write-Output "章节列表："');
-            //         chapterOptions.forEach((opt: {text: string }, index: number) => {
-            //             terminal.sendText(`Write-Output "${index + 1}. ${opt.text}"`);
-            //         });
-            //     };
-
-            //     // 初始打印
-            //     terminal.sendText(`Write-Output "=== ${title} ==="\n`);
-            //     terminal.sendText(`Write-Output @"\n${contentText}\n"@\n`);
-            //     terminal.sendText(`Write-Output "--- 可输入章节编号切换章节，或输入 q 退出 ---"\n`);
-            //     printChapterList();
-
-            //     // 循环输入
-            //     while (true) {
-            //         const input = await vscode.window.showInputBox({
-            //             prompt: '输入章节编号切换章节，或输入 q 退出',
-            //             placeHolder: '例如 1 / 2 / q'
-            //         });
-
-            //         if (!input) {
-            //             continue;
-            //         }
-
-            //         if (input === 'q') {
-            //             terminal.sendText('Write-Output "退出阅读模式，感谢使用 ❤️"\n');
-            //             await browser.close();
-            //             console.log('playwright browser closed');
-            //             break;
-            //         }
-
-            //         const match = input.match(/^(\d+)$/);
-            //         if (match) {
-            //             const index = parseInt(match[1]) - 1;
-            //             if (index >= 0 && index < chapterOptions.length) {
-            //                 const chapterUrl = new URL(chapterOptions[index].url, url).toString();
-            //                 await printChapter(chapterUrl);
-            //             } else {
-            //                 vscode.window.showWarningMessage('无效编号，请重新输入');
-            //             }
-            //         } else {
-            //             vscode.window.showWarningMessage('无效输入，请重新输入');
-            //         }
-            //     }
-
-            //     return;
-            // }
+            const content = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: '正在加载 AO3 作品...',
+                    cancellable: false
+                },
+                () => loadWork(url)
+            );
 
             if (mode === '伪装成终端摸鱼模式') {
-                const output = vscode.window.createOutputChannel('AO3 Reader');
-                output.show();
-
-                const printChapter = async (chapterUrl: string) => {
-                    await page.goto(chapterUrl, { waitUntil: 'domcontentloaded' });
-                    const { contentText: newContentText, title: newTitle } = await extractContent(page);
-                    output.clear();
-                    printChapterList();
-                    output.appendLine(`\n=== ${newTitle} ===\n`);
-                    output.appendLine(newContentText);
-                    output.appendLine('\n--- 可输入章节编号切换章节，或输入 q 退出 ---\n');
-                };
-
-                const printChapterList = () => {
-                    output.appendLine('章节列表：');
-                    chapterOptions.forEach((opt: { text: string }, index: number) => {
-                        output.appendLine(`${index + 1}. ${opt.text}`);
-                    });
-                };
-
-                // 初始打印
-                output.clear();
-
-                if (chapterOptions.length <= 1) {
-                    // 短篇文，无章节切换
-                    output.appendLine(`\n=== ${title} ===\n`);
-                    output.appendLine(contentText);
-                    output.appendLine('\n（此作品为单章短篇，无章节可切换）');
-                    await browser.close();
-                    console.log('playwright browser closed');
-                    return;
-                }
-
-                // 正常多章节文
-                printChapterList();
-                output.appendLine(`\n=== ${title} ===\n`);
-                output.appendLine(contentText);
-                output.appendLine('\n--- 可输入章节编号切换章节，或输入 q 退出 ---\n');
-
-                // 循环输入
-                while (true) {
-                    const input = await vscode.window.showInputBox({
-                        prompt: '输入章节编号切换章节，或输入 q 退出',
-                        placeHolder: '例如 1 / 2 / q'
-                    });
-
-                    if (!input) {
-                        continue;
-                    }
-
-                    if (input === 'q') {
-                        output.appendLine('\n退出阅读模式，感谢使用 ❤️');
-                        await browser.close();
-                        console.log('playwright browser closed');
-                        break;
-                    }
-
-                    const match = input.match(/^(\d+)$/);
-                    if (match) {
-                        const index = parseInt(match[1]) - 1;
-                        if (index >= 0 && index < chapterOptions.length) {
-                            const chapterUrl = new URL(chapterOptions[index].url, url).toString();
-                            await printChapter(chapterUrl);
-                        } else {
-                            vscode.window.showWarningMessage('无效编号，请重新输入');
-                        }
-                    } else {
-                        vscode.window.showWarningMessage('无效输入，请重新输入');
-                    }
-                }
-
+                await openOutputReader(output, url, content);
                 return;
             }
 
-            // 默认模式：Webview 窗口
-            const panel = vscode.window.createWebviewPanel(
-                'ao3FanficView',
-                title,
-                vscode.ViewColumn.One,
-                {
-                    enableScripts: true
-                }
-            );
-
-            panel.webview.html = getWebviewHtml(contentHtml, title, chapterOptions);
-
-            panel.webview.onDidReceiveMessage(async message => {
-                if (message.command === 'loadChapter') {
-                    const newUrl = message.chapterUrl;
-                    vscode.window.showInformationMessage(`加载章节: ${newUrl}`);
-
-                    const fullUrl = new URL(newUrl, url).toString();
-                    try {
-                        await page.goto(fullUrl, { waitUntil: 'domcontentloaded' });
-
-                        const { contentHtml: newContentHtml, title: newTitle } = await extractContent(page);
-                        panel.webview.html = getWebviewHtml(newContentHtml, newTitle, chapterOptions);
-                    } catch (error) {
-                        vscode.window.showErrorMessage(`加载失败: ${error}`);
-                        // 不关闭 browser，让用户可以继续切换章节
-                    }
-                }
-            });
-
-            panel.onDidDispose(async () => {
-                await browser.close();
-                console.log('playwright browser closed');
-            });
-
+            openWebviewReader(context, url, content);
         } catch (error) {
-            vscode.window.showErrorMessage(`加载失败: ${error}`);
-            // await browser.close();
+            vscode.window.showErrorMessage(getErrorMessage(error));
         }
     });
 
-    context.subscriptions.push(disposable);
+    context.subscriptions.push(disposable, output);
 }
 
 export function deactivate() {}
 
-async function extractContent(page: any) {
-    let contentHtml, contentText;
-    
-    try {
-        // 优先选择包含 "Chapter Text" 的元素
-        contentHtml = await page.$eval('#chapters .userstuff:has(h3:contains("Chapter Text"))', (el: Element) => el.innerHTML);
-        contentText = await page.$eval('#chapters .userstuff:has(h3:contains("Chapter Text"))', (el: HTMLElement) => el.innerText);
-    } catch (error) {
-        try {
-            // 备选：选择有 module 类的元素
-            contentHtml = await page.$eval('#chapters .userstuff.module', (el: Element) => el.innerHTML);
-            contentText = await page.$eval('#chapters .userstuff.module', (el: HTMLElement) => el.innerText);
-        } catch (error2) {
-            // 最后回退到最后一个元素
-            contentHtml = await page.$eval('#chapters .userstuff:last-child', (el: Element) => el.innerHTML);
-            contentText = await page.$eval('#chapters .userstuff:last-child', (el: HTMLElement) => el.innerText);
-        }
-    }
-    
-    const title = await page.title();
-    const chapterOptions = await page.$$eval('#selected_id option', (options: Element[]) => {
-        return options.map(option => ({
-            text: option.textContent?.trim() || '',
-            url: (option as HTMLOptionElement).value
-        }));
-    });
+async function openOutputReader(output: vscode.OutputChannel, baseUrl: URL, initial: WorkContent) {
+    let content = initial;
+    output.show();
 
-    return { contentHtml, contentText, title, chapterOptions };
+    while (true) {
+        renderOutputChapter(output, content);
+
+        if (content.chapterOptions.length <= 1) {
+            output.appendLine('\n（此作品为单章短篇，无章节可切换）');
+            return;
+        }
+
+        const input = await vscode.window.showInputBox({
+            prompt: '输入章节编号切换章节，输入 q 退出',
+            placeHolder: '例如 1 / 2 / q'
+        });
+
+        if (!input || input.toLowerCase() === 'q') {
+            output.appendLine('\n退出阅读模式。');
+            return;
+        }
+
+        const index = Number.parseInt(input, 10) - 1;
+        if (!/^\d+$/.test(input) || index < 0 || index >= content.chapterOptions.length) {
+            vscode.window.showWarningMessage('无效章节编号，请重新输入。');
+            continue;
+        }
+
+        const chapterUrl = normalizeAo3Url(new URL(content.chapterOptions[index].url, baseUrl).toString());
+        content = await loadWork(chapterUrl);
+    }
 }
 
-function getWebviewHtml(content: string, title: string, chapterOptions: { text: string, url: string }[]) {
-    const optionsHtml = chapterOptions.map(opt => `<option value="${opt.url}">${opt.text}</option>`).join('\n');
+function renderOutputChapter(output: vscode.OutputChannel, content: WorkContent) {
+    output.clear();
 
-    return `
-    <!DOCTYPE html>
+    if (content.chapterOptions.length > 1) {
+        output.appendLine('章节列表：');
+        content.chapterOptions.forEach((option, index) => {
+            output.appendLine(`${index + 1}. ${option.text}`);
+        });
+    }
+
+    output.appendLine(`\n=== ${content.title} ===\n`);
+    output.appendLine(content.contentText);
+}
+
+function openWebviewReader(
+    context: vscode.ExtensionContext,
+    baseUrl: URL,
+    initial: WorkContent
+) {
+    const panel = vscode.window.createWebviewPanel(
+        'ao3FanficView',
+        initial.title,
+        vscode.ViewColumn.One,
+        { enableScripts: true }
+    );
+
+    const render = (content: WorkContent) => {
+        panel.title = content.title;
+        panel.webview.html = getWebviewHtml(panel.webview, content);
+    };
+
+    render(initial);
+
+    panel.webview.onDidReceiveMessage(
+        async message => {
+            if (message.command !== 'loadChapter' || typeof message.chapterUrl !== 'string') {
+                return;
+            }
+
+            try {
+                const chapterUrl = normalizeAo3Url(new URL(message.chapterUrl, baseUrl).toString());
+                render(await loadWork(chapterUrl));
+            } catch (error) {
+                vscode.window.showErrorMessage(getErrorMessage(error));
+            }
+        },
+        undefined,
+        context.subscriptions
+    );
+}
+
+async function loadWork(url: URL): Promise<WorkContent> {
+    const html = await requestHtml(url);
+    const $ = load(html);
+    let article = $('#chapters .userstuff[role="article"], #chapters .userstuff.module').first();
+
+    // AO3 single-chapter works may omit the article/module attributes used on chapter pages.
+    if (!article.length) {
+        article = $('#chapters > .userstuff').first();
+    }
+    if (!article.length && $('#chapters').is('.userstuff')) {
+        article = $('#chapters').first();
+    }
+
+    if (!article.length) {
+        const pageError = $('#main .error, #main .caution, #main .notice').first().text().trim();
+        const detail = pageError || '页面中没有找到章节正文。该作品可能需要登录、已被删除或禁止访客访问。';
+        throw new Error(detail);
+    }
+
+    article.find('script, style, iframe, object, embed, form, input, button').remove();
+    article.find('*').each((_, element) => {
+        const attributes = Object.keys(element.attribs ?? {});
+        for (const attribute of attributes) {
+            const value = element.attribs?.[attribute] ?? '';
+            if (attribute.toLowerCase().startsWith('on') || /^\s*javascript:/i.test(value)) {
+                $(element).removeAttr(attribute);
+            }
+        }
+    });
+
+    const title = $('h2.title.heading').first().text().replace(/\s+/g, ' ').trim()
+        || $('title').text().replace(/\s+/g, ' ').trim()
+        || 'AO3 Reader';
+
+    const workId = url.pathname.match(/^\/works\/(\d+)/)?.[1];
+    const chapterOptions = $('#selected_id option').map((_, option) => {
+        const value = $(option).attr('value') ?? '';
+        const chapterUrl = workId && /^\d+$/.test(value)
+            ? `/works/${workId}/chapters/${value}`
+            : value;
+
+        return {
+            text: $(option).text().replace(/\s+/g, ' ').trim(),
+            url: chapterUrl
+        };
+    }).get().filter(option => option.url);
+
+    return {
+        contentHtml: article.html() ?? '',
+        contentText: article.text().replace(/\n{3,}/g, '\n\n').trim(),
+        title,
+        chapterOptions
+    };
+}
+
+function requestHtml(url: URL, redirects = 0): Promise<string> {
+    if (redirects > MAX_REDIRECTS) {
+        return Promise.reject(new Error('AO3 重定向次数过多。'));
+    }
+
+    const proxy = getProxyUrl();
+    const agent = proxy ? new HttpsProxyAgent(proxy) : undefined;
+
+    return new Promise((resolve, reject) => {
+        const request = https.get(
+            url,
+            {
+                agent,
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml',
+                    'Accept-Encoding': 'identity',
+                    'Cookie': 'view_adult=true',
+                    'User-Agent': 'AO3-Reader-VSCode/0.0.9'
+                }
+            },
+            response => {
+                const status = response.statusCode ?? 0;
+                const location = response.headers.location;
+
+                if (status >= 300 && status < 400 && location) {
+                    response.resume();
+                    try {
+                        resolve(requestHtml(normalizeAo3Url(new URL(location, url).toString()), redirects + 1));
+                    } catch (error) {
+                        reject(error);
+                    }
+                    return;
+                }
+
+                if (status !== 200) {
+                    response.resume();
+                    reject(new Error(`AO3 请求失败（HTTP ${status}）。请检查网络、代理或作品访问权限。`));
+                    return;
+                }
+
+                response.setEncoding('utf8');
+                let body = '';
+                response.on('data', chunk => {
+                    body += chunk;
+                });
+                response.on('end', () => resolve(body));
+            }
+        );
+
+        request.setTimeout(REQUEST_TIMEOUT_MS, () => {
+            request.destroy(new Error('连接 AO3 超时。请检查网络或 VS Code 的 http.proxy 设置。'));
+        });
+        request.on('error', reject);
+    });
+}
+
+function getProxyUrl(): string | undefined {
+    const configured = vscode.workspace.getConfiguration('http').get<string>('proxy')?.trim();
+    return configured
+        || process.env.HTTPS_PROXY
+        || process.env.https_proxy
+        || process.env.HTTP_PROXY
+        || process.env.http_proxy;
+}
+
+function normalizeAo3Url(value: string): URL {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' || !AO3_HOSTS.has(url.hostname)) {
+        throw new Error('请输入 archiveofourown.org 的 HTTPS 作品链接。');
+    }
+    if (!/^\/works\/\d+(?:\/chapters\/\d+)?\/?$/.test(url.pathname)) {
+        throw new Error('链接格式应为 /works/作品编号 或 /works/作品编号/chapters/章节编号。');
+    }
+    url.hash = '';
+    return url;
+}
+
+function getWebviewHtml(webview: vscode.Webview, content: WorkContent) {
+    const nonce = `${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const optionsHtml = content.chapterOptions
+        .map(option => `<option value="${escapeHtml(option.url)}">${escapeHtml(option.text)}</option>`)
+        .join('\n');
+    const chapterControls = content.chapterOptions.length > 1
+        ? `<div class="controls">
+            <select id="chapterSelect">${optionsHtml}</select>
+            <button id="loadChapter">加载章节</button>
+        </div>`
+        : '';
+
+    return `<!DOCTYPE html>
     <html lang="zh-cn">
     <head>
         <meta charset="UTF-8">
-        <title>${title}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="Content-Security-Policy"
+              content="default-src 'none'; img-src https: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+        <title>${escapeHtml(content.title)}</title>
         <style>
-            body {
-                font-size: 14px;
-                font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
-                line-height: 1.7;
-            }
-            h1 {
-                font-size: 18px;
-            }
-            #content {
-                margin-top: 1em;
-                font-size: 14px;
-            }
-            select, button {
-                font-size: 14px;
-            }
+            body { max-width: 780px; margin: 0 auto; padding: 24px; font: 16px/1.75 var(--vscode-font-family); color: var(--vscode-foreground); }
+            h1 { font-size: 1.4rem; }
+            .controls { display: flex; gap: 8px; margin: 16px 0 24px; }
+            select { flex: 1; }
+            select, button { padding: 6px 8px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border); }
+            a { color: var(--vscode-textLink-foreground); }
+            img { max-width: 100%; }
         </style>
     </head>
     <body>
-        <h1>${title}</h1>
-        <select id="chapterSelect">
-            ${optionsHtml}
-        </select>
-        <button id="loadChapter">加载章节</button>
-        <div id="content">
-            ${content}
-        </div>
-
-        <script>
-            const vscode = acquireVsCodeApi();
-
-            document.getElementById('loadChapter').addEventListener('click', () => {
+        <h1>${escapeHtml(content.title)}</h1>
+        ${chapterControls}
+        <main>${content.contentHtml}</main>
+        <script nonce="${nonce}">
+            const button = document.getElementById('loadChapter');
+            button?.addEventListener('click', () => {
                 const select = document.getElementById('chapterSelect');
-                const chapterUrl = select.value;
-                vscode.postMessage({
+                acquireVsCodeApi().postMessage({
                     command: 'loadChapter',
-                    chapterUrl: chapterUrl
+                    chapterUrl: select.value
                 });
             });
         </script>
     </body>
-    </html>
-    `;
+    </html>`;
+}
+
+function escapeHtml(value: string) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function getErrorMessage(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `AO3 Reader：${message}`;
 }

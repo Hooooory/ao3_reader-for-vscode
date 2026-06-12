@@ -1,46 +1,58 @@
 # AO3 Reader
 
-🎉 A Visual Studio Code extension that lets you read AO3 (Archive of Our Own) fanfiction inside your editor, either in a web view or a “terminal-style stealth mode” for the office!
+A Visual Studio Code extension for reading public AO3 works in a Webview or in the Output panel.
 
-💡 一个可以在 VSCode 中阅读 AO3 同人小说的插件！支持普通阅读和伪装成终端摸鱼阅读模式，注意终端模式的输出在output里面不在terminal本身。
+一个可以在 VS Code 中阅读 AO3 公开作品的扩展，支持普通阅读和 Output 面板阅读模式。
 
----
+## Install / 安装
 
-## ✨ Features / 特性
+Marketplace 用户只需要安装扩展，不需要单独安装 Node.js、npm、Playwright 或浏览器。
 
-- 📖 Read AO3 stories directly in VS Code.
-- 🕵️ “Stealth mode” that shows the story inside the terminal window.
-- 🧠 Smart detection: works with both multi-chapter and one-shot stories.
+从源码运行：
 
----
+```bash
+npm ci
+npm run compile
+```
 
-## 🚀 Usage / 使用方法
+然后在 VS Code 中打开本项目并按 `F5`，会启动 Extension Development Host。
 
-1. Open command palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
-2. Search `Open AO3 Fanfiction`
-3. Paste a full AO3 link, like: https://archiveofourown.org/works/1234567/chapters/2345678
-4. Choose between:
-- "Read inside VSCode"
-- "Terminal stealth mode"
-5. For terminal stealth mode, the story will appear in the **Output panel** (not the terminal)
-6. Enjoy reading!
+打包 VSIX：
 
----
+```bash
+npm run package
+```
 
-## 📌 Notes / 注意事项
+## Usage / 使用
 
-- Please ensure you are using full chapter links, e.g. including `/chapters/xxxx`.
-- Playwright may take a few seconds to load the page.
+1. 打开命令面板：Windows/Linux 使用 `Ctrl+Shift+P`，macOS 使用 `Cmd+Shift+P`。
+2. 运行 `Open AO3 Fanfiction`。
+3. 粘贴 AO3 作品或章节链接，例如：
+   `https://archiveofourown.org/works/1234567/chapters/2345678`
+4. 选择“在 VSCode 里阅读”或“伪装成终端摸鱼模式”。
 
----
+“终端模式”的内容显示在 **Output / 输出** 面板，不是真正的 Terminal / 终端。
 
-## 📧 Feedback / 联系作者
+## Network / 网络与代理
 
-If you find bugs or want to request features, feel free to open an issue or contact me at bluetrainswemissed@proton.me
-欢迎提交 issue 或发送建议！
+扩展需要能够访问 `https://archiveofourown.org`。如果你的网络不能直连 AO3，请先配置可用代理，然后在 VS Code 设置中搜索 `http.proxy` 并填入代理地址，例如：
 
----
+```text
+http://127.0.0.1:7890
+```
 
-## 📜 License
+扩展也支持 `HTTPS_PROXY`、`HTTP_PROXY` 环境变量。修改代理后请执行 `Developer: Reload Window`。
+
+## Limitations / 限制
+
+- 支持 `/works/<id>` 和 `/works/<id>/chapters/<id>` 链接。
+- 需要登录才能阅读的作品目前不支持。
+- 如果 AO3 返回 403、5xx 或连接超时，请检查 AO3 状态、网络与代理。
+
+## Feedback / 联系作者
+
+欢迎提交 GitHub issue，或联系 `bluetrainswemissed@proton.me`。
+
+## License
 
 MIT

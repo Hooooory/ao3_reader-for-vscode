@@ -3,7 +3,7 @@
   "publisher": "Pizzarollwins",
   "displayName": "ao3-reader",
   "description": "Read AO3 fanfiction in VSCode",
-  "version": "0.0.8",
+  "version": "0.0.10",
   "engines": {
     "vscode": "^1.70.0",
     "node": ">=16.0.0"
@@ -12,7 +12,7 @@
     "Other"
   ],
   "activationEvents": [
-    "*"
+    "onCommand:ao3-reader.openAo3Fanfic"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -25,14 +25,21 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js",
+    "vscode:prepublish": "npm run compile && npm run bundle",
+    "package": "vsce package"
   },
   "devDependencies": {
-    "typescript": "^5.8.3",
-    "vscode": "^1.1.37"
+    "@types/node": "16.18.126",
+    "@types/vscode": "1.70.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.8.3"
   },
   "dependencies": {
-    "playwright": "^1.53.1"
+    "cheerio": "1.0.0-rc.12",
+    "https-proxy-agent": "^7.0.6"
   },
   "repository": {
     "type": "git",
